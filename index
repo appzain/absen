@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Akses Perangkat - Absensi</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Face API JS -->
+  <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+  <!-- HTML5 QR Code -->
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  
+  <style>
+    #video-container { position: relative; display: flex; justify-content: center; align-items: center; background: #000; border-radius: 8px; overflow: hidden; width: 100%; max-width: 400px; height: 300px; margin: 0 auto; }
+    #videoElement { width: 100%; height: 100%; object-fit: cover; }
+    canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+    .step-box { padding: 15px; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 10px; background: #f8fafc; }
+    .status-ok { color: #15803d; font-weight: bold; }
+    .status-wait { color: #b45309; font-weight: bold; }
+  </style>
+</head>
+<body class="bg-gray-100 p-4 font-sans text-gray-800">
+
+  <div class="max-w-md mx-auto bg-white rounded-xl shadow-md overflow-hidden p-6 text-center">
+    <h1 class="text-xl font-bold mb-2">Portal Verifikasi Kehadiran</h1>
+    <p class="text-sm text-gray-500 mb-6" id="action-title">Memuat pengaturan...</p>
+    
+    <div id="video-container" class="mb-4">
+      <video id="videoElement" autoplay muted playsinline></video>
+      <!-- QR Scanner div overlaying if needed -->
+      <div id="qr-reader" style="position:absolute; top:0; left:0; width:100%; height:100%; display:none; background:#fff;"></div>
+    </div>
+
+    <!-- Papan Status -->
+    <div class="text-left">
+      <div class="step-box">
+        <div class="flex justify-between items-center mb-2">
+          <span>Kamera & Model AI</span>
+          <span id="st-cam" class="status-wait">Memuat...</span>
+        </div>
+        <div class="flex justify-between items-center mb-2">
+          <span>GPS & Lokasi</span>
+          <span id="st-gps" class="status-wait">Menunggu...</span>
+        </div>
+        <div class="flex justify-between items-center mb-2">
+          <span>Pengenalan Wajah</span>
+          <span id="st-face" class="status-wait">Menunggu Wajah...</span>
+        </div>
+        <div id="qr-section" class="flex justify-between items-center hidden">
+          <span>QR Scanner</span>
+          <span id="st-qr" class="status-wait">Belum Scan</span>
+        </div>
+      </div>
+    </div>
+
+    <button id="btn-action" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded mt-4 opacity-50 cursor-not-allowed" disabled>
+      Menyiapkan Sistem...
+    </button>
+  </div>
+
+  <script>
+    // URL Params Extraction
+    const urlParams = new URLSearchParams(window.location.search);
+    const ACTION = urlParams.get('action'); // 'register', 'absen_masuk', 'absen_pulang'
+    const USER_ID = urlParams.get('userId');
+    const NAMA = urlParams.get('nama');
+    const API_URL = urlParams.get('api');
+
+    // State Data
+    const payload = {
+      action: ACTION === 'register' ? 'register_wajah' : 'submit_absen',
+      userId: USER_ID,
+      nama: NAMA,
+      tipe: ACTION === 'absen_masuk' ? 'Masuk' : (ACTION === 'absen_pulang' ? 'Pulang' : null),
+      lat: null,
+      lng: null,
+      accuracy: null,
+      descriptor: null, // array
+      fotoBase64: null,
+      qrResult: 'Tanpa QR',
+      deviceInfo: navigator.userAgent,
+      browserInfo: navigator.platform
+    };
+
+    let isModelsLoaded = false;
+    const video = document.getElementById('videoElement');
+    const btnAction = document.getElementById('btn-action');
+
+    // Init Logic based on Action
+    document.addEventListener("DOMContentLoaded", async () => {
+      if(!USER_ID || !API_URL) {
+        alert("Akses ilegal. Harap buka melalui dashboard utama.");
+        window.close();
+        return;
+      }
+
+      document.getElementById('action-title').innerText = ACTION === 'register' ? `Registrasi Wajah: ${NAMA}` : `Absensi ${payload.tipe}: ${NAMA}`;
+      if (ACTION !== 'register') {
+        document.getElementById('qr-section').classList.remove('hidden');
+      }
+
+      await loadAIModels();
+      startCamera();
+      
+      if(ACTION !== 'register') {
+         getGPSLocation();
+      }
+    });
+
+    // 1. Load Face API Models
+    async function loadAIModels() {
+      // NOTE: GitHub Pages Anda harus memiliki folder /models 
+      // Download weights dari https://github.com/justadudewhohacks/face-api.js/tree/master/weights
+      // Untuk script ini kita asumsikan URL raw public. Jika gagal, upload folder models ke github repo anda
+      const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models'; 
+      try {
+        await Promise.all([
+          faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+          faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+          faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+        ]);
+        isModelsLoaded = true;
+      } catch (err) {
+        alert("Gagal memuat AI Model. Pastikan koneksi stabil.");
+      }
+    }
+
+    // 2. Start Camera
+    function startCamera() {
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false })
+        .then(stream => {
+          video.srcObject = stream;
+          document.getElementById('st-cam').innerText = "Aktif";
+          document.getElementById('st-cam').className = "status-ok";
+        })
+        .catch(err => {
+          document.getElementById('st-cam').innerText = "Ditolak/Error";
+          alert("Mohon izinkan akses kamera!");
+        });
+    }
+
+    // 3. Get GPS
+    function getGPSLocation() {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            payload.lat = position.coords.latitude;
+            payload.lng = position.coords.longitude;
+            payload.accuracy = position.coords.accuracy;
+            document.getElementById('st-gps').innerText = `OK (Akurasi: ${Math.round(payload.accuracy)}m)`;
+            document.getElementById('st-gps').className = "status-ok";
+            checkReadyState();
+          },
+          (error) => {
+            document.getElementById('st-gps').innerText = "Gagal Akses";
+            alert("Mohon izinkan akses lokasi (GPS) pada browser Anda!");
+          },
+          { enableHighAccuracy: true, maximumAge: 0 }
+        );
+      } else {
+        alert("Browser Anda tidak mendukung Geolocation.");
+      }
+    }
+
+    // 4. Face Recognition Loop Event
+    video.addEventListener('play', () => {
+      const canvas = faceapi.createCanvasFromMedia(video);
+      document.getElementById('video-container').append(canvas);
+      const displaySize = { width: video.clientWidth, height: video.clientHeight };
+      faceapi.matchDimensions(canvas, displaySize);
+
+      setInterval(async () => {
+        if(!isModelsLoaded) return;
+        
+        const detections = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
+        
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (detections) {
+          const resizedDetections = faceapi.resizeResults(detections, displaySize);
+          faceapi.draw.drawDetections(canvas, resizedDetections);
+          
+          payload.descriptor = Array.from(detections.descriptor); // Float32Array to standard array for JSON
+          
+          // Tangkap gambar base64
+          const picCanvas = document.createElement('canvas');
+          picCanvas.width = video.videoWidth;
+          picCanvas.height = video.videoHeight;
+          picCanvas.getContext('2d').drawImage(video, 0, 0);
+          payload.fotoBase64 = picCanvas.toDataURL('image/jpeg');
+
+          document.getElementById('st-face').innerText = "Wajah Terdeteksi";
+          document.getElementById('st-face').className = "status-ok";
+          
+          checkReadyState();
+        } else {
+          document.getElementById('st-face').innerText = "Tidak Ada Wajah";
+          document.getElementById('st-face').className = "status-wait";
+          disableButton();
+        }
+      }, 1000);
+    });
+
+    // 5. Check if all criteria met to enable send button
+    function checkReadyState() {
+      if(ACTION === 'register') {
+        if(payload.descriptor) {
+          enableButton("Simpan Data Wajah");
+        }
+      } else {
+        if(payload.descriptor && payload.lat) {
+          enableButton("Kirim Data Absensi");
+        }
+      }
+    }
+
+    function enableButton(text) {
+      btnAction.innerText = text;
+      btnAction.disabled = false;
+      btnAction.classList.remove('opacity-50', 'cursor-not-allowed');
+      btnAction.classList.add('animate-pulse');
+      btnAction.onclick = submitData;
+    }
+
+    function disableButton() {
+      btnAction.innerText = "Syarat Belum Terpenuhi...";
+      btnAction.disabled = true;
+      btnAction.classList.add('opacity-50', 'cursor-not-allowed');
+      btnAction.classList.remove('animate-pulse');
+    }
+
+    // 6. Submit via fetch API ke Google Apps Script
+    async function submitData() {
+      btnAction.innerText = "Mengirim...";
+      btnAction.disabled = true;
+      btnAction.classList.remove('animate-pulse');
+
+      try {
+        const response = await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" }, // GAS prefers text/plain for CORS
+          body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        
+        if(result.status === 'success') {
+          alert("BERHASIL: " + result.message);
+          window.close(); // Tutup window jika berhasil
+        } else {
+          alert("GAGAL: " + result.message);
+          enableButton("Coba Lagi");
+        }
+      } catch(err) {
+        alert("Terjadi kesalahan jaringan.");
+        enableButton("Coba Lagi");
+      }
+    }
+  </script>
+</body>
+</html>
