@@ -83,6 +83,7 @@
     };
 
     let isModelsLoaded = false;
+    let watchId = null; // Tambahkan variabel untuk memantau ID GPS
     const video = document.getElementById('videoElement');
     const btnAction = document.getElementById('btn-action');
 
@@ -139,23 +140,33 @@
         });
     }
 
-    // 3. Get GPS
+    // 3. Get GPS (DIUBAH MENJADI WATCH POSITION UNTUK AKURASI LEBIH BAIK)
     function getGPSLocation() {
       if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
+        document.getElementById('st-gps').innerText = "Mencari satelit GPS...";
+        
+        watchId = navigator.geolocation.watchPosition(
           (position) => {
+            const acc = position.coords.accuracy;
             payload.lat = position.coords.latitude;
             payload.lng = position.coords.longitude;
-            payload.accuracy = position.coords.accuracy;
-            document.getElementById('st-gps').innerText = `OK (Akurasi: ${Math.round(payload.accuracy)}m)`;
-            document.getElementById('st-gps').className = "status-ok";
+            payload.accuracy = acc;
+            
+            // JIKA AKURASI SANGAT BURUK (> 150 meter error), MINTA KARYAWAN PINDAH
+            if (acc > 150) {
+               document.getElementById('st-gps').innerText = `Sinyal Lemah (${Math.round(acc)}m). Pergi ke area terbuka!`;
+               document.getElementById('st-gps').className = "status-wait text-red-600";
+            } else {
+               document.getElementById('st-gps').innerText = `OK (Akurasi: ${Math.round(acc)}m)`;
+               document.getElementById('st-gps').className = "status-ok";
+            }
             checkReadyState();
           },
           (error) => {
             document.getElementById('st-gps').innerText = "Gagal Akses";
-            alert("Mohon izinkan akses lokasi (GPS) pada browser Anda!");
+            alert("Mohon izinkan akses lokasi (GPS) dan pastikan fitur Lokasi/GPS di HP Anda MENYALA.");
           },
-          { enableHighAccuracy: true, maximumAge: 0 }
+          { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 } // timeout diperpanjang untuk warmup
         );
       } else {
         alert("Browser Anda tidak mendukung Geolocation.");
@@ -209,8 +220,11 @@
           enableButton("Simpan Data Wajah");
         }
       } else {
-        if(payload.descriptor && payload.lat) {
+        // PERBAIKAN: Tombol absen hanya aktif jika koordinat sudah ada DAN akurasi cukup baik (< 150m)
+        if(payload.descriptor && payload.lat && payload.accuracy <= 150) {
           enableButton("Kirim Data Absensi");
+        } else if (payload.lat && payload.accuracy > 150) {
+          disableButton("Menunggu Akurasi GPS...");
         }
       }
     }
@@ -220,11 +234,8 @@
       btnAction.disabled = false;
       btnAction.classList.remove('opacity-50', 'cursor-not-allowed');
       btnAction.classList.add('animate-pulse');
-      btnAction.onclick = submitData;
-    }
-
-    function disableButton() {
-      btnAction.innerText = "Syarat Belum Terpenuhi...";
+    function disableButton(customText) {
+      btnAction.innerText = customText || "Syarat Belum Terpenuhi...";
       btnAction.disabled = true;
       btnAction.classList.add('opacity-50', 'cursor-not-allowed');
       btnAction.classList.remove('animate-pulse');
@@ -235,6 +246,9 @@
       btnAction.innerText = "Mengirim...";
       btnAction.disabled = true;
       btnAction.classList.remove('animate-pulse');
+      
+      // Stop pemantauan GPS setelah data dikirim untuk menghemat baterai
+      if(watchId) navigator.geolocation.clearWatch(watchId);
 
       try {
         const response = await fetch(API_URL, {
