@@ -164,16 +164,19 @@
         function getGPSLocation() {
           if (navigator.geolocation) {
             document.getElementById('st-gps').innerText = "Mencari Sinyal (Bisa butuh 20 dtk)...";
-            navigator.geolocation.getCurrentPosition(
-              (position) => {
+            let locationWatchId;
+            let timeoutId;
+            
+            const handleSuccess = (position) => {
                 const acc = position.coords.accuracy;
                 
-                // Jika akurasi > 500 meter, ini PASTI lokasi tiang sinyal/IP, BUKAN Satelit GPS.
                 if (acc > 500) {
-                    document.getElementById('st-gps').innerText = `Akurasi Buruk (${Math.round(acc)}m)`;
-                    document.getElementById('st-gps').className = "status-fail animate-pulse";
-                    alert("LOKASI TIDAK VALID!\n\nSistem mendeteksi browser Anda menggunakan titik tiang sinyal Provider Internet / IP (Akurasi " + Math.round(acc) + "m), bukan Satelit GPS asli. Ini membuat titik Anda 'nyasar' ke kota lain.\n\nSOLUSI:\n1. Pastikan GPS/Lokasi HP dalam keadaan MENYALA (Akurasi Tinggi).\n2. Berdirilah di luar ruangan / dekat jendela.\n3. Muat ulang (Refresh) halaman ini.");
+                    document.getElementById('st-gps').innerText = `Akurasi ${Math.round(acc)}m (Mencari Satelit...)`;
+                    document.getElementById('st-gps').className = "status-wait animate-pulse";
                 } else {
+                    if (locationWatchId) navigator.geolocation.clearWatch(locationWatchId);
+                    if (timeoutId) clearTimeout(timeoutId);
+                    
                     payload.lat = position.coords.latitude;
                     payload.lng = position.coords.longitude;
                     payload.accuracy = acc;
@@ -181,8 +184,15 @@
                     document.getElementById('st-gps').className = "status-ok";
                     checkReadyState();
                 }
-              },
-              (error) => {
+            };
+            
+            const handleError = (error) => {
+                // Jangan tampilkan error timeout terus-menerus jika masih tahap watchPosition
+                if (error.code === error.TIMEOUT) return; 
+                
+                if (locationWatchId) navigator.geolocation.clearWatch(locationWatchId);
+                if (timeoutId) clearTimeout(timeoutId);
+                
                 let errorMsg = "GPS Gagal";
                 if (error.code === error.PERMISSION_DENIED) {
                   errorMsg = "Izin Lokasi Ditolak";
@@ -190,16 +200,29 @@
                 } else if (error.code === error.POSITION_UNAVAILABLE) {
                   errorMsg = "Sinyal Tidak Tersedia";
                   alert("Sinyal lokasi tidak tersedia. Coba gunakan di luar ruangan atau pastikan fitur GPS HP Anda telah dinyalakan.");
-                } else if (error.code === error.TIMEOUT) {
-                  errorMsg = "Waktu Habis (Timeout)";
-                  alert("Waktu habis saat mencari sinyal satelit. Proses ini butuh waktu jika Anda berada di dalam ruangan. Coba pindah ke dekat jendela lalu Refresh halaman.");
                 }
                 
                 document.getElementById('st-gps').innerText = errorMsg;
                 document.getElementById('st-gps').className = "status-fail";
-              },
-              { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 } // Timeout ditingkatkan ke 20 Detik
+            };
+
+            // Gunakan watchPosition agar GPS terus mencari sinyal satelit yang lebih akurat
+            locationWatchId = navigator.geolocation.watchPosition(
+              handleSuccess,
+              handleError,
+              { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
             );
+
+            // Batas maksimal waktu pencarian (35 detik)
+            timeoutId = setTimeout(() => {
+                if (!payload.lat) {
+                    if (locationWatchId) navigator.geolocation.clearWatch(locationWatchId);
+                    document.getElementById('st-gps').innerText = `Gagal (Akurasi Buruk)`;
+                    document.getElementById('st-gps').className = "status-fail";
+                    alert("LOKASI TIDAK VALID / GAGAL KUNCI SATELIT!\n\nSistem mendeteksi browser Anda hanya menggunakan IP / Sinyal Seluler dengan akurasi sangat buruk, atau berada di ruangan tertutup.\n\nSOLUSI:\n1. Pastikan GPS (Lokasi) HP MENYALA (Mode Akurasi Tinggi).\n2. Berpindahlah ke LUAR RUANGAN agar HP mendapat sinyal Satelit.\n3. Muat ulang (Refresh) halaman ini.");
+                }
+            }, 35000);
+
           } else {
             document.getElementById('st-gps').innerText = "GPS Tidak Didukung";
             document.getElementById('st-gps').className = "status-fail";
