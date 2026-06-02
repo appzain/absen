@@ -160,14 +160,15 @@
             });
         }
 
-        // --- PERBAIKAN: JARING PENGAMAN LOKASI PALSU ---
+        // --- PERBAIKAN: JARING PENGAMAN LOKASI PALSU & PENINGKATAN TIMEOUT ---
         function getGPSLocation() {
           if (navigator.geolocation) {
+            document.getElementById('st-gps').innerText = "Mencari Sinyal (Bisa butuh 20 dtk)...";
             navigator.geolocation.getCurrentPosition(
               (position) => {
                 const acc = position.coords.accuracy;
                 
-                // Jika akurasi > 500 meter, ini PASTI lokasi tiang sinyal/IP Jakarta, BUKAN Satelit GPS.
+                // Jika akurasi > 500 meter, ini PASTI lokasi tiang sinyal/IP, BUKAN Satelit GPS.
                 if (acc > 500) {
                     document.getElementById('st-gps').innerText = `Akurasi Buruk (${Math.round(acc)}m)`;
                     document.getElementById('st-gps').className = "status-fail animate-pulse";
@@ -182,11 +183,27 @@
                 }
               },
               (error) => {
-                document.getElementById('st-gps').innerText = "GPS Gagal";
+                let errorMsg = "GPS Gagal";
+                if (error.code === error.PERMISSION_DENIED) {
+                  errorMsg = "Izin Lokasi Ditolak";
+                  alert("Akses lokasi ditolak! Harap izinkan akses lokasi (GPS) pada pengaturan browser Anda lalu Refresh halaman ini.");
+                } else if (error.code === error.POSITION_UNAVAILABLE) {
+                  errorMsg = "Sinyal Tidak Tersedia";
+                  alert("Sinyal lokasi tidak tersedia. Coba gunakan di luar ruangan atau pastikan fitur GPS HP Anda telah dinyalakan.");
+                } else if (error.code === error.TIMEOUT) {
+                  errorMsg = "Waktu Habis (Timeout)";
+                  alert("Waktu habis saat mencari sinyal satelit. Proses ini butuh waktu jika Anda berada di dalam ruangan. Coba pindah ke dekat jendela lalu Refresh halaman.");
+                }
+                
+                document.getElementById('st-gps').innerText = errorMsg;
                 document.getElementById('st-gps').className = "status-fail";
               },
-              { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+              { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 } // Timeout ditingkatkan ke 20 Detik
             );
+          } else {
+            document.getElementById('st-gps').innerText = "GPS Tidak Didukung";
+            document.getElementById('st-gps').className = "status-fail";
+            alert("Browser atau perangkat Anda tidak mendukung layanan lokasi GPS.");
           }
         }
 
@@ -253,7 +270,7 @@
           if(ACTION === 'register') {
             if(payload.descriptor) enableButton("Simpan Data Wajah");
           } else {
-            // Tombol Kirim TIDAK AKAN NYALA jika koordinat belum tervalidasi (Akurasi < 500m)
+            // Tombol Kirim TIDAK AKAN NYALA jika koordinat belum tervalidasi
             if(payload.descriptor && payload.lat) enableButton("Kirim Data Absensi");
           }
         }
