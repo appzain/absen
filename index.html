@@ -24,7 +24,8 @@
 
   <div class="max-w-md w-full mx-auto bg-white rounded-2xl shadow-xl overflow-hidden p-6 text-center border border-gray-100">
     <h1 class="text-2xl font-black text-gray-800 mb-1">Verifikasi Biometrik</h1>
-    <p class="text-sm text-gray-500 mb-6" id="action-title font-medium">Menyiapkan konfigurasi sistem...</p>
+    <!-- PERBAIKAN TYPO: id dan class dipisah dengan benar -->
+    <p class="text-sm text-gray-500 mb-6 font-medium" id="action-title">Menyiapkan konfigurasi sistem...</p>
     
     <div id="video-container" class="mb-6 border-2 border-gray-200">
       <video id="videoElement" autoplay muted playsinline></video>
@@ -104,13 +105,14 @@
       }
 
       const readableAction = ACTION === 'register' ? 'Registrasi Wajah Baru' : `Presensi Kehadiran ${payload.tipe}`;
+      // Sebelumnya crash di baris ini karena id="action-title" tidak ditemukan. Sekarang sudah beres!
       document.getElementById('action-title').innerText = `${readableAction} : ${NAMA}`;
       
       if (ACTION !== 'register') {
         document.getElementById('qr-section').classList.remove('hidden');
       }
 
-      // PERBAIKAN: Nyalakan kamera & GPS secara instan tanpa menunggu AI selesai diunduh
+      // Nyalakan kamera & GPS secara instan tanpa menunggu AI selesai diunduh
       startCamera();
       if(ACTION !== 'register') {
          getGPSLocation();
