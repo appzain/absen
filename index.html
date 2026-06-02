@@ -6,7 +6,7 @@
   <title>Akses Perangkat - Absensi</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Face API JS -->
-  <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
   <!-- HTML5 QR Code -->
   <script src="https://unpkg.com/html5-qrcode"></script>
   
@@ -59,7 +59,7 @@
   </div>
 
   <script>
-    // URL Params Extraction
+    //    // URL Params Extraction
     const urlParams = new URLSearchParams(window.location.search);
     const ACTION = urlParams.get('action'); // 'register', 'absen_masuk', 'absen_pulang'
     const USER_ID = urlParams.get('userId');
@@ -87,7 +87,7 @@
     const video = document.getElementById('videoElement');
     const btnAction = document.getElementById('btn-action');
 
-    // Init Logic based on Action
+    //    // Init Logic based on Action
     document.addEventListener("DOMContentLoaded", async () => {
       if(!USER_ID || !API_URL) {
         alert("Akses ilegal. Harap buka melalui dashboard utama.");
@@ -108,11 +108,11 @@
       }
     });
 
-    // 1. Load Face API Models
+    //    // 1. Load Face API Models
     async function loadAIModels() {
       // NOTE: GitHub Pages Anda harus memiliki folder /models 
       // Download weights dari https://github.com/justadudewhohacks/face-api.js/tree/master/weights
-      // Untuk script ini kita asumsikan URL raw public. Jika gagal, upload folder models ke github repo anda
+      // Untuk script ini kita asumsikan URL raw public.
       const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models'; 
       try {
         await Promise.all([
@@ -126,7 +126,7 @@
       }
     }
 
-    // 2. Start Camera
+    //    // 2. Start Camera
     function startCamera() {
       navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false })
         .then(stream => {
@@ -140,7 +140,7 @@
         });
     }
 
-    // 3. Get GPS (DIUBAH MENJADI WATCH POSITION UNTUK AKURASI LEBIH BAIK)
+    //    // 3. Get GPS (Menggunakan WatchPosition untuk akurasi lebih baik)
     function getGPSLocation() {
       if (navigator.geolocation) {
         document.getElementById('st-gps').innerText = "Mencari satelit GPS...";
@@ -166,14 +166,14 @@
             document.getElementById('st-gps').innerText = "Gagal Akses";
             alert("Mohon izinkan akses lokasi (GPS) dan pastikan fitur Lokasi/GPS di HP Anda MENYALA.");
           },
-          { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 } // timeout diperpanjang untuk warmup
+          { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
         );
       } else {
         alert("Browser Anda tidak mendukung Geolocation.");
       }
     }
 
-    // 4. Face Recognition Loop Event
+    //    // 4. Face Recognition Loop Event
     video.addEventListener('play', () => {
       const canvas = faceapi.createCanvasFromMedia(video);
       document.getElementById('video-container').append(canvas);
@@ -213,14 +213,14 @@
       }, 1000);
     });
 
-    // 5. Check if all criteria met to enable send button
+    //    // 5. Check if all criteria met to enable send button
     function checkReadyState() {
       if(ACTION === 'register') {
         if(payload.descriptor) {
           enableButton("Simpan Data Wajah");
         }
       } else {
-        // PERBAIKAN: Tombol absen hanya aktif jika koordinat sudah ada DAN akurasi cukup baik (< 150m)
+        // Tombol absen hanya aktif jika koordinat sudah ada DAN akurasi cukup baik (< 150m)
         if(payload.descriptor && payload.lat && payload.accuracy <= 150) {
           enableButton("Kirim Data Absensi");
         } else if (payload.lat && payload.accuracy > 150) {
@@ -234,14 +234,18 @@
       btnAction.disabled = false;
       btnAction.classList.remove('opacity-50', 'cursor-not-allowed');
       btnAction.classList.add('animate-pulse');
+      btnAction.onclick = submitData; // Pastikan event trigger saat diklik aktif
+    }
+
     function disableButton(customText) {
       btnAction.innerText = customText || "Syarat Belum Terpenuhi...";
       btnAction.disabled = true;
       btnAction.classList.add('opacity-50', 'cursor-not-allowed');
       btnAction.classList.remove('animate-pulse');
+      btnAction.onclick = null;
     }
 
-    // 6. Submit via fetch API ke Google Apps Script
+    //    // 6. Submit via fetch API ke Google Apps Script
     async function submitData() {
       btnAction.innerText = "Mengirim...";
       btnAction.disabled = true;
