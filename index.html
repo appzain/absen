@@ -60,7 +60,6 @@
 
   <script>
     // --- GLOBAL ERROR CATCHER ---
-    // Jika ada error sekecil apapun, akan langsung dicetak di layar, jadi tidak akan stuck diam.
     window.onerror = function(msg, url, lineNo, columnNo, error) {
       const titleEl = document.getElementById('action-title');
       if (titleEl) {
@@ -70,7 +69,7 @@
       return false;
     };
 
-    // --- INISIALISASI UTAMA (LANGSUNG JALAN TANPA MENUNGGU) ---
+    // --- INISIALISASI UTAMA ---
     try {
       const urlParams = new URLSearchParams(window.location.search);
       const ACTION = urlParams.get('action'); 
@@ -114,16 +113,13 @@
         const video = document.getElementById('videoElement');
         const btnAction = document.getElementById('btn-action');
 
-        // Nyalakan Kamera & GPS Langsung!
         startCamera();
         if(ACTION !== 'register') {
            getGPSLocation();
         }
 
-        // Mulai Unduh AI
         loadAIModels();
 
-        // FUNGSI LOKAL (Terproteksi dari Error Global)
         async function loadAIModels() {
           const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models'; 
           try {
@@ -164,22 +160,32 @@
             });
         }
 
+        // --- PERBAIKAN: JARING PENGAMAN LOKASI PALSU ---
         function getGPSLocation() {
           if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(
               (position) => {
-                payload.lat = position.coords.latitude;
-                payload.lng = position.coords.longitude;
-                payload.accuracy = position.coords.accuracy;
-                document.getElementById('st-gps').innerText = `Terkunci (Akurasi: ±${Math.round(payload.accuracy)}m)`;
-                document.getElementById('st-gps').className = "status-ok";
-                checkReadyState();
+                const acc = position.coords.accuracy;
+                
+                // Jika akurasi > 500 meter, ini PASTI lokasi tiang sinyal/IP Jakarta, BUKAN Satelit GPS.
+                if (acc > 500) {
+                    document.getElementById('st-gps').innerText = `Akurasi Buruk (${Math.round(acc)}m)`;
+                    document.getElementById('st-gps').className = "status-fail animate-pulse";
+                    alert("LOKASI TIDAK VALID!\n\nSistem mendeteksi browser Anda menggunakan titik tiang sinyal Provider Internet / IP (Akurasi " + Math.round(acc) + "m), bukan Satelit GPS asli. Ini membuat titik Anda 'nyasar' ke kota lain.\n\nSOLUSI:\n1. Pastikan GPS/Lokasi HP dalam keadaan MENYALA (Akurasi Tinggi).\n2. Berdirilah di luar ruangan / dekat jendela.\n3. Muat ulang (Refresh) halaman ini.");
+                } else {
+                    payload.lat = position.coords.latitude;
+                    payload.lng = position.coords.longitude;
+                    payload.accuracy = acc;
+                    document.getElementById('st-gps').innerText = `Terkunci (Akurasi: ±${Math.round(payload.accuracy)}m)`;
+                    document.getElementById('st-gps').className = "status-ok";
+                    checkReadyState();
+                }
               },
               (error) => {
                 document.getElementById('st-gps').innerText = "GPS Gagal";
                 document.getElementById('st-gps').className = "status-fail";
               },
-              { enableHighAccuracy: true, maximumAge: 0 }
+              { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
             );
           }
         }
@@ -247,6 +253,7 @@
           if(ACTION === 'register') {
             if(payload.descriptor) enableButton("Simpan Data Wajah");
           } else {
+            // Tombol Kirim TIDAK AKAN NYALA jika koordinat belum tervalidasi (Akurasi < 500m)
             if(payload.descriptor && payload.lat) enableButton("Kirim Data Absensi");
           }
         }
