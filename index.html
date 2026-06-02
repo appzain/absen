@@ -256,16 +256,22 @@
 
                 let isFaceValid = false;
 
-                if (ACTION !== 'register' && registeredDescriptor) {
-                   const distance = faceapi.euclideanDistance(detections.descriptor, registeredDescriptor);
-                   if (distance <= 0.55) { 
-                      document.getElementById('st-face').innerText = "Wajah Terverifikasi Sesuai!";
-                      document.getElementById('st-face').className = "status-ok";
-                      isFaceValid = true;
+                if (ACTION !== 'register') {
+                   if (registeredDescriptor) {
+                       const distance = faceapi.euclideanDistance(detections.descriptor, registeredDescriptor);
+                       if (distance <= 0.55) { 
+                          document.getElementById('st-face').innerText = "Wajah Terverifikasi Sesuai!";
+                          document.getElementById('st-face').className = "status-ok";
+                          isFaceValid = true;
+                       } else {
+                          document.getElementById('st-face').innerText = "Wajah Tidak Cocok!";
+                          document.getElementById('st-face').className = "status-fail animate-pulse";
+                          isFaceValid = false;
+                       }
                    } else {
-                      document.getElementById('st-face').innerText = "Wajah Tidak Cocok!";
-                      document.getElementById('st-face').className = "status-fail animate-pulse";
-                      isFaceValid = false;
+                       document.getElementById('st-face').innerText = "Data Wajah Rusak/Kosong!";
+                       document.getElementById('st-face').className = "status-fail animate-pulse";
+                       isFaceValid = false;
                    }
                 } else {
                    document.getElementById('st-face').innerText = "Wajah Terdeteksi";
