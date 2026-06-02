@@ -100,12 +100,30 @@
         }
 
         let registeredDescriptor = null;
-        if (ACTION !== 'register' && REG_DESCRIPTOR_STR) {
+        let descriptorFetchDone = false;
+        
+        async function fetchRegisteredDescriptor() {
            try {
-              registeredDescriptor = new Float32Array(JSON.parse(REG_DESCRIPTOR_STR));
+              const res = await fetch(API_URL, {
+                  method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, 
+                  body: JSON.stringify({ action: 'get_descriptor', userId: USER_ID })
+              });
+              const responseData = await res.json();
+              if (responseData.status === 'success' && responseData.descriptor) {
+                  let parsed = typeof responseData.descriptor === 'string' ? JSON.parse(responseData.descriptor) : responseData.descriptor;
+                  if (parsed && !Array.isArray(parsed) && typeof parsed === 'object') {
+                      parsed = Object.values(parsed);
+                  }
+                  registeredDescriptor = new Float32Array(parsed);
+              }
            } catch(e) {
-              console.error("Gagal membaca descriptor biometrik", e);
+              console.error("Gagal mengambil data wajah dari server", e);
            }
+           descriptorFetchDone = true;
+        }
+
+        if (ACTION !== 'register') {
+           fetchRegisteredDescriptor();
         }
 
         let isModelsLoaded = false;
@@ -269,8 +287,13 @@
                           isFaceValid = false;
                        }
                    } else {
-                       document.getElementById('st-face').innerText = "Data Wajah Rusak/Kosong!";
-                       document.getElementById('st-face').className = "status-fail animate-pulse";
+                       if (!descriptorFetchDone) {
+                           document.getElementById('st-face').innerText = "Mengunduh Data Wajah...";
+                           document.getElementById('st-face').className = "status-wait animate-pulse";
+                       } else {
+                           document.getElementById('st-face').innerText = "Data Wajah Rusak/Kosong!";
+                           document.getElementById('st-face').className = "status-fail animate-pulse";
+                       }
                        isFaceValid = false;
                    }
                 } else {
