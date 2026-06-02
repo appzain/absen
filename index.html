@@ -24,8 +24,7 @@
 
   <div class="max-w-md w-full mx-auto bg-white rounded-2xl shadow-xl overflow-hidden p-6 text-center border border-gray-100">
     <h1 class="text-2xl font-black text-gray-800 mb-1">Verifikasi Biometrik</h1>
-    <!-- PERBAIKAN TYPO: id dan class dipisah dengan benar -->
-    <p class="text-sm text-gray-500 mb-6 font-medium" id="action-title">Menyiapkan konfigurasi sistem...</p>
+    <p class="text-sm text-blue-600 mb-6 font-bold" id="action-title">Menghubungkan ke Sistem...</p>
     
     <div id="video-container" class="mb-6 border-2 border-gray-200">
       <video id="videoElement" autoplay muted playsinline></video>
@@ -60,249 +59,232 @@
   </div>
 
   <script>
-    // --- AMBIL PARAMETER URL DENGAN AMAN ---
-    const urlParams = new URLSearchParams(window.location.search);
-    const ACTION = urlParams.get('action'); 
-    const USER_ID = urlParams.get('userId');
-    const NAMA = urlParams.get('nama');
-    const API_URL = urlParams.get('api');
-    const REG_DESCRIPTOR_STR = urlParams.get('descriptor'); 
-
-    let registeredDescriptor = null;
-    if (ACTION !== 'register' && REG_DESCRIPTOR_STR) {
-       try {
-          registeredDescriptor = new Float32Array(JSON.parse(REG_DESCRIPTOR_STR));
-       } catch(e) {
-          console.error("Gagal membaca descriptor biometrik dari database:", e);
-       }
-    }
-
-    const payload = {
-      action: ACTION === 'register' ? 'register_wajah' : 'submit_absen',
-      userId: USER_ID,
-      nama: NAMA,
-      tipe: ACTION === 'absen_masuk' ? 'Masuk' : (ACTION === 'absen_pulang' ? 'Pulang' : null),
-      lat: null,
-      lng: null,
-      accuracy: null,
-      descriptor: null, 
-      fotoBase64: null,
-      qrResult: 'Tanpa QR',
-      deviceInfo: navigator.userAgent,
-      browserInfo: navigator.platform
+    // --- GLOBAL ERROR CATCHER ---
+    // Jika ada error sekecil apapun, akan langsung dicetak di layar, jadi tidak akan stuck diam.
+    window.onerror = function(msg, url, lineNo, columnNo, error) {
+      const titleEl = document.getElementById('action-title');
+      if (titleEl) {
+        titleEl.innerText = "CRASH SISTEM: " + msg + " (Baris: " + lineNo + ")";
+        titleEl.className = "text-sm text-red-600 mb-6 font-black";
+      }
+      return false;
     };
 
-    let isModelsLoaded = false;
-    let isCameraReady = false;
-    const video = document.getElementById('videoElement');
-    const btnAction = document.getElementById('btn-action');
+    // --- INISIALISASI UTAMA (LANGSUNG JALAN TANPA MENUNGGU) ---
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const ACTION = urlParams.get('action'); 
+      const USER_ID = urlParams.get('userId');
+      const NAMA = urlParams.get('nama');
+      const API_URL = urlParams.get('api');
+      const REG_DESCRIPTOR_STR = urlParams.get('descriptor'); 
 
-    document.addEventListener("DOMContentLoaded", () => {
       if(!USER_ID || !API_URL) {
         alert("Akses ditolak! Harap buka halaman ini melalui Portal Utama Absensi.");
         window.close();
-        return;
-      }
+      } else {
+        const payload = {
+          action: ACTION === 'register' ? 'register_wajah' : 'submit_absen',
+          userId: USER_ID,
+          nama: NAMA,
+          tipe: ACTION === 'absen_masuk' ? 'Masuk' : (ACTION === 'absen_pulang' ? 'Pulang' : null),
+          lat: null, lng: null, accuracy: null, descriptor: null, fotoBase64: null,
+          qrResult: 'Tanpa QR', deviceInfo: navigator.userAgent, browserInfo: navigator.platform
+        };
 
-      const readableAction = ACTION === 'register' ? 'Registrasi Wajah Baru' : `Presensi Kehadiran ${payload.tipe}`;
-      // Sebelumnya crash di baris ini karena id="action-title" tidak ditemukan. Sekarang sudah beres!
-      document.getElementById('action-title').innerText = `${readableAction} : ${NAMA}`;
-      
-      if (ACTION !== 'register') {
-        document.getElementById('qr-section').classList.remove('hidden');
-      }
+        const readableAction = ACTION === 'register' ? 'Registrasi Wajah Baru' : `Presensi Kehadiran ${payload.tipe}`;
+        document.getElementById('action-title').innerText = `${readableAction} : ${NAMA}`;
+        document.getElementById('action-title').className = "text-sm text-blue-600 mb-6 font-bold";
 
-      // Nyalakan kamera & GPS secara instan tanpa menunggu AI selesai diunduh
-      startCamera();
-      if(ACTION !== 'register') {
-         getGPSLocation();
-      }
-      
-      // Unduh AI di Background
-      loadAIModels();
-    });
-
-    // 1. Load Face API Models di Background
-    async function loadAIModels() {
-      const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models'; 
-      try {
-        await Promise.all([
-          faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-          faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-          faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
-        ]);
-        isModelsLoaded = true;
-        
-        if(isCameraReady) {
-          document.getElementById('st-cam').innerText = "Kamera & AI Siap";
-          document.getElementById('st-cam').className = "status-ok";
+        if (ACTION !== 'register') {
+          document.getElementById('qr-section').classList.remove('hidden');
         }
-      } catch (err) {
-        alert("Gagal memuat AI Model pengenalan wajah. Pastikan koneksi internet Anda stabil.");
-      }
-    }
 
-    // 2. Akses Kamera Depan
-    function startCamera() {
-      navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false })
-        .then(stream => {
-          video.srcObject = stream;
-          isCameraReady = true;
-          
-          if(isModelsLoaded) {
-             document.getElementById('st-cam').innerText = "Kamera & AI Siap";
-             document.getElementById('st-cam').className = "status-ok";
-          } else {
-             document.getElementById('st-cam').innerText = "Kamera Aktif, Memuat AI...";
-             document.getElementById('st-cam').className = "status-wait";
+        let registeredDescriptor = null;
+        if (ACTION !== 'register' && REG_DESCRIPTOR_STR) {
+           try {
+              registeredDescriptor = new Float32Array(JSON.parse(REG_DESCRIPTOR_STR));
+           } catch(e) {
+              console.error("Gagal membaca descriptor biometrik", e);
+           }
+        }
+
+        let isModelsLoaded = false;
+        let isCameraReady = false;
+        const video = document.getElementById('videoElement');
+        const btnAction = document.getElementById('btn-action');
+
+        // Nyalakan Kamera & GPS Langsung!
+        startCamera();
+        if(ACTION !== 'register') {
+           getGPSLocation();
+        }
+
+        // Mulai Unduh AI
+        loadAIModels();
+
+        // FUNGSI LOKAL (Terproteksi dari Error Global)
+        async function loadAIModels() {
+          const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models'; 
+          try {
+            await Promise.all([
+              faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+              faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+              faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+            ]);
+            isModelsLoaded = true;
+            if(isCameraReady) {
+              document.getElementById('st-cam').innerText = "Kamera & AI Siap";
+              document.getElementById('st-cam').className = "status-ok";
+            }
+          } catch (err) {
+            document.getElementById('action-title').innerText = "Koneksi Lemah: Gagal memuat AI Model";
+            document.getElementById('action-title').className = "text-sm text-red-600 mb-6 font-bold";
+            alert("Gagal mengunduh AI. Pastikan internet stabil dan tidak diblokir.");
           }
-        })
-        .catch(err => {
-          document.getElementById('st-cam').innerText = "Akses Kamera Ditolak";
-          document.getElementById('st-cam').className = "status-fail";
-          alert("Aplikasi membutuhkan izin kamera untuk memverifikasi wajah Anda.");
-        });
-    }
+        }
 
-    // 3. Akses GPS Presisi Tinggi
-    function getGPSLocation() {
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          (position) => {
-            payload.lat = position.coords.latitude;
-            payload.lng = position.coords.longitude;
-            payload.accuracy = position.coords.accuracy;
+        function startCamera() {
+          navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false })
+            .then(stream => {
+              video.srcObject = stream;
+              isCameraReady = true;
+              if(isModelsLoaded) {
+                 document.getElementById('st-cam').innerText = "Kamera & AI Siap";
+                 document.getElementById('st-cam').className = "status-ok";
+              } else {
+                 document.getElementById('st-cam').innerText = "Kamera Aktif, Memuat AI...";
+                 document.getElementById('st-cam').className = "status-wait";
+              }
+            })
+            .catch(err => {
+              document.getElementById('st-cam').innerText = "Akses Kamera Ditolak";
+              document.getElementById('st-cam').className = "status-fail";
+              alert("Aplikasi membutuhkan izin kamera untuk memverifikasi wajah.");
+            });
+        }
+
+        function getGPSLocation() {
+          if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+              (position) => {
+                payload.lat = position.coords.latitude;
+                payload.lng = position.coords.longitude;
+                payload.accuracy = position.coords.accuracy;
+                document.getElementById('st-gps').innerText = `Terkunci (Akurasi: ±${Math.round(payload.accuracy)}m)`;
+                document.getElementById('st-gps').className = "status-ok";
+                checkReadyState();
+              },
+              (error) => {
+                document.getElementById('st-gps').innerText = "GPS Gagal";
+                document.getElementById('st-gps').className = "status-fail";
+              },
+              { enableHighAccuracy: true, maximumAge: 0 }
+            );
+          }
+        }
+
+        video.addEventListener('play', () => {
+          const canvas = faceapi.createCanvasFromMedia(video);
+          document.getElementById('video-container').append(canvas);
+          const displaySize = { width: video.clientWidth, height: video.clientHeight };
+          faceapi.matchDimensions(canvas, displaySize);
+
+          setInterval(async () => {
+            if(!isModelsLoaded) return;
             
-            document.getElementById('st-gps').innerText = `Terkunci (Akurasi: ±${Math.round(payload.accuracy)}m)`;
-            document.getElementById('st-gps').className = "status-ok";
-            checkReadyState();
-          },
-          (error) => {
-            document.getElementById('st-gps').innerText = "GPS Gagal";
-            document.getElementById('st-gps').className = "status-fail";
-            alert("Gagal mengunci lokasi. Pastikan izin lokasi/GPS aktif pada browser Anda.");
-          },
-          { enableHighAccuracy: true, maximumAge: 0 }
-        );
-      } else {
-        alert("Browser Anda tidak mendukung layanan lokasi.");
-      }
-    }
+            try {
+              const detections = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
+              const ctx = canvas.getContext('2d');
+              ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // 4. Deteksi dan Pencocokan Wajah
-    video.addEventListener('play', () => {
-      const canvas = faceapi.createCanvasFromMedia(video);
-      document.getElementById('video-container').append(canvas);
-      const displaySize = { width: video.clientWidth, height: video.clientHeight };
-      faceapi.matchDimensions(canvas, displaySize);
+              if (detections) {
+                const resizedDetections = faceapi.resizeResults(detections, displaySize);
+                faceapi.draw.drawDetections(canvas, resizedDetections);
+                payload.descriptor = Array.from(detections.descriptor);
+                
+                const picCanvas = document.createElement('canvas');
+                picCanvas.width = video.videoWidth; picCanvas.height = video.videoHeight;
+                picCanvas.getContext('2d').drawImage(video, 0, 0);
+                payload.fotoBase64 = picCanvas.toDataURL('image/jpeg');
 
-      setInterval(async () => {
-        // Jangan jalankan pemindaian jika AI belum selesai diunduh
-        if(!isModelsLoaded) return;
-        
-        const detections = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
-        
-        const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                let isFaceValid = false;
 
-        if (detections) {
-          const resizedDetections = faceapi.resizeResults(detections, displaySize);
-          faceapi.draw.drawDetections(canvas, resizedDetections);
-          
-          payload.descriptor = Array.from(detections.descriptor);
-          
-          const picCanvas = document.createElement('canvas');
-          picCanvas.width = video.videoWidth;
-          picCanvas.height = video.videoHeight;
-          picCanvas.getContext('2d').drawImage(video, 0, 0);
-          payload.fotoBase64 = picCanvas.toDataURL('image/jpeg');
+                if (ACTION !== 'register' && registeredDescriptor) {
+                   const distance = faceapi.euclideanDistance(detections.descriptor, registeredDescriptor);
+                   if (distance <= 0.55) { 
+                      document.getElementById('st-face').innerText = "Wajah Terverifikasi Sesuai!";
+                      document.getElementById('st-face').className = "status-ok";
+                      isFaceValid = true;
+                   } else {
+                      document.getElementById('st-face').innerText = "Wajah Tidak Cocok!";
+                      document.getElementById('st-face').className = "status-fail animate-pulse";
+                      isFaceValid = false;
+                   }
+                } else {
+                   document.getElementById('st-face').innerText = "Wajah Terdeteksi";
+                   document.getElementById('st-face').className = "status-ok";
+                   isFaceValid = true;
+                }
 
-          let isFaceValid = false;
-
-          if (ACTION !== 'register' && registeredDescriptor) {
-             const distance = faceapi.euclideanDistance(detections.descriptor, registeredDescriptor);
-             
-             if (distance <= 0.55) { 
-                document.getElementById('st-face').innerText = "Wajah Terverifikasi Sesuai!";
-                document.getElementById('st-face').className = "status-ok";
-                isFaceValid = true;
-             } else {
-                document.getElementById('st-face').innerText = "Wajah Tidak Cocok!";
-                document.getElementById('st-face').className = "status-fail animate-pulse";
-                isFaceValid = false;
-             }
-          } else {
-             document.getElementById('st-face').innerText = "Wajah Terdeteksi";
-             document.getElementById('st-face').className = "status-ok";
-             isFaceValid = true;
-          }
-
-          if (isFaceValid) {
-             checkReadyState();
-          } else {
-             disableButton("Wajah Tidak Sesuai Data");
-          }
-        } else {
-          document.getElementById('st-face').innerText = "Mencari Wajah...";
-          document.getElementById('st-face').className = "status-wait";
-          disableButton("Mencari Wajah...");
-        }
-      }, 1000);
-    });
-
-    // 5. Periksa Kesiapan Data Sebelum Mengizinkan Tombol Kirim
-    function checkReadyState() {
-      if(ACTION === 'register') {
-        if(payload.descriptor) {
-          enableButton("Simpan Data Wajah");
-        }
-      } else {
-        if(payload.descriptor && payload.lat) {
-          enableButton("Kirim Data Absensi");
-        }
-      }
-    }
-
-    function enableButton(text) {
-      btnAction.innerText = text;
-      btnAction.disabled = false;
-      btnAction.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-gray-400');
-      btnAction.classList.add('bg-blue-600', 'hover:bg-blue-700', 'animate-pulse');
-      btnAction.onclick = submitData;
-    }
-
-    function disableButton(customText) {
-      btnAction.innerText = customText;
-      btnAction.disabled = true;
-      btnAction.classList.add('opacity-50', 'cursor-not-allowed', 'bg-gray-400');
-      btnAction.classList.remove('bg-blue-600', 'hover:bg-blue-700', 'animate-pulse');
-    }
-
-    // 6. Kirim Data
-    async function submitData() {
-      btnAction.innerText = "Mengirim data...";
-      btnAction.disabled = true;
-      btnAction.classList.remove('animate-pulse');
-
-      try {
-        const response = await fetch(API_URL, {
-          method: "POST",
-          headers: { "Content-Type": "text/plain;charset=utf-8" }, 
-          body: JSON.stringify(payload)
+                if (isFaceValid) {
+                   checkReadyState();
+                } else {
+                   disableButton("Wajah Tidak Sesuai Data");
+                }
+              } else {
+                document.getElementById('st-face').innerText = "Mencari Wajah...";
+                document.getElementById('st-face').className = "status-wait";
+                disableButton("Mencari Wajah...");
+              }
+            } catch(errorLoop) {
+              console.error(errorLoop);
+            }
+          }, 1000);
         });
-        const result = await response.json();
-        
-        if(result.status === 'success') {
-          alert("BERHASIL: " + result.message);
-          window.close(); 
-        } else {
-          alert("GAGAL: " + result.message);
-          enableButton("Coba Lagi");
+
+        function checkReadyState() {
+          if(ACTION === 'register') {
+            if(payload.descriptor) enableButton("Simpan Data Wajah");
+          } else {
+            if(payload.descriptor && payload.lat) enableButton("Kirim Data Absensi");
+          }
         }
-      } catch(err) {
-        alert("Terjadi kesalahan koneksi saat mengirim data.");
-        enableButton("Coba Lagi");
+
+        function enableButton(text) {
+          btnAction.innerText = text; btnAction.disabled = false;
+          btnAction.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-gray-400');
+          btnAction.classList.add('bg-blue-600', 'hover:bg-blue-700', 'animate-pulse');
+          btnAction.onclick = submitData;
+        }
+
+        function disableButton(customText) {
+          btnAction.innerText = customText; btnAction.disabled = true;
+          btnAction.classList.add('opacity-50', 'cursor-not-allowed', 'bg-gray-400');
+          btnAction.classList.remove('bg-blue-600', 'hover:bg-blue-700', 'animate-pulse');
+        }
+
+        async function submitData() {
+          btnAction.innerText = "Mengirim data..."; btnAction.disabled = true; btnAction.classList.remove('animate-pulse');
+          try {
+            const response = await fetch(API_URL, {
+              method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, 
+              body: JSON.stringify(payload)
+            });
+            const result = await response.json();
+            if(result.status === 'success') {
+              alert("BERHASIL: " + result.message); window.close(); 
+            } else {
+              alert("GAGAL: " + result.message); enableButton("Coba Lagi");
+            }
+          } catch(err) {
+            alert("Terjadi kesalahan koneksi saat mengirim data."); enableButton("Coba Lagi");
+          }
+        }
       }
+    } catch (criticalError) {
+      document.getElementById('action-title').innerText = "CRASH: " + criticalError.message;
+      document.getElementById('action-title').className = "text-sm text-red-600 mb-6 font-black";
     }
   </script>
 </body>
