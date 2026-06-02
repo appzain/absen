@@ -6,67 +6,78 @@
   <title>Akses Perangkat - Absensi</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Face API JS -->
-  <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
   <!-- HTML5 QR Code -->
   <script src="https://unpkg.com/html5-qrcode"></script>
   
   <style>
-    #video-container { position: relative; display: flex; justify-content: center; align-items: center; background: #000; border-radius: 8px; overflow: hidden; width: 100%; max-width: 400px; height: 300px; margin: 0 auto; }
+    #video-container { position: relative; display: flex; justify-content: center; align-items: center; background: #000; border-radius: 12px; overflow: hidden; width: 100%; max-width: 400px; height: 300px; margin: 0 auto; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
     #videoElement { width: 100%; height: 100%; object-fit: cover; }
-    canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+    canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
     .step-box { padding: 15px; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 10px; background: #f8fafc; }
-    .status-ok { color: #15803d; font-weight: bold; }
-    .status-wait { color: #b45309; font-weight: bold; }
+    .status-ok { color: #16a34a; font-weight: bold; }
+    .status-wait { color: #d97706; font-weight: bold; }
+    .status-fail { color: #dc2626; font-weight: bold; }
   </style>
 </head>
-<body class="bg-gray-100 p-4 font-sans text-gray-800">
+<body class="bg-gray-100 p-4 font-sans text-gray-800 min-h-screen flex items-center justify-center">
 
-  <div class="max-w-md mx-auto bg-white rounded-xl shadow-md overflow-hidden p-6 text-center">
-    <h1 class="text-xl font-bold mb-2">Portal Verifikasi Kehadiran</h1>
-    <p class="text-sm text-gray-500 mb-6" id="action-title">Memuat pengaturan...</p>
+  <div class="max-w-md w-full mx-auto bg-white rounded-2xl shadow-xl overflow-hidden p-6 text-center border border-gray-100">
+    <h1 class="text-2xl font-black text-gray-800 mb-1">Verifikasi Biometrik</h1>
+    <p class="text-sm text-gray-500 mb-6" id="action-title font-medium">Menyiapkan konfigurasi sistem...</p>
     
-    <div id="video-container" class="mb-4">
+    <div id="video-container" class="mb-6 border-2 border-gray-200">
       <video id="videoElement" autoplay muted playsinline></video>
-      <!-- QR Scanner div overlaying if needed -->
       <div id="qr-reader" style="position:absolute; top:0; left:0; width:100%; height:100%; display:none; background:#fff;"></div>
     </div>
 
-    <!-- Papan Status -->
-    <div class="text-left">
-      <div class="step-box">
-        <div class="flex justify-between items-center mb-2">
-          <span>Kamera & Model AI</span>
-          <span id="st-cam" class="status-wait">Memuat...</span>
+    <!-- Papan Monitor Status Perangkat & Lokasi -->
+    <div class="text-left space-y-3">
+      <div class="step-box space-y-2">
+        <div class="flex justify-between items-center">
+          <span class="text-sm font-semibold text-gray-600">Kamera & AI Model</span>
+          <span id="st-cam" class="status-wait text-sm">Memuat AI...</span>
         </div>
-        <div class="flex justify-between items-center mb-2">
-          <span>GPS & Lokasi</span>
-          <span id="st-gps" class="status-wait">Menunggu...</span>
+        <div class="flex justify-between items-center">
+          <span class="text-sm font-semibold text-gray-600">Satelit GPS</span>
+          <span id="st-gps" class="status-wait text-sm">Mencari Sinyal...</span>
         </div>
-        <div class="flex justify-between items-center mb-2">
-          <span>Pengenalan Wajah</span>
-          <span id="st-face" class="status-wait">Menunggu Wajah...</span>
+        <div class="flex justify-between items-center">
+          <span class="text-sm font-semibold text-gray-600">Identitas Wajah</span>
+          <span id="st-face" class="status-wait text-sm">Menunggu Wajah...</span>
         </div>
         <div id="qr-section" class="flex justify-between items-center hidden">
-          <span>QR Scanner</span>
-          <span id="st-qr" class="status-wait">Belum Scan</span>
+          <span class="text-sm font-semibold text-gray-600">QR Code</span>
+          <span id="st-qr" class="status-wait text-sm">Mencari Kode QR...</span>
         </div>
       </div>
     </div>
 
-    <button id="btn-action" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded mt-4 opacity-50 cursor-not-allowed" disabled>
-      Menyiapkan Sistem...
+    <button id="btn-action" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 px-4 rounded-xl mt-6 opacity-50 cursor-not-allowed shadow-lg transition" disabled>
+      Menyiapkan Sensor Kamera...
     </button>
   </div>
 
   <script>
-    //    // URL Params Extraction
+    // --- AMBIL PARAMETER URL DENGAN AMAN ---
     const urlParams = new URLSearchParams(window.location.search);
     const ACTION = urlParams.get('action'); // 'register', 'absen_masuk', 'absen_pulang'
     const USER_ID = urlParams.get('userId');
     const NAMA = urlParams.get('nama');
     const API_URL = urlParams.get('api');
+    const REG_DESCRIPTOR_STR = urlParams.get('descriptor'); // Template Wajah dari database
 
-    // State Data
+    // Parsing Face Descriptor Terdaftar dari Database GAS
+    let registeredDescriptor = null;
+    if (ACTION !== 'register' && REG_DESCRIPTOR_STR) {
+       try {
+          registeredDescriptor = new Float32Array(JSON.parse(REG_DESCRIPTOR_STR));
+       } catch(e) {
+          console.error("Gagal membaca descriptor biometrik dari database:", e);
+       }
+    }
+
+    // Payload Pengiriman ke Server
     const payload = {
       action: ACTION === 'register' ? 'register_wajah' : 'submit_absen',
       userId: USER_ID,
@@ -75,7 +86,7 @@
       lat: null,
       lng: null,
       accuracy: null,
-      descriptor: null, // array
+      descriptor: null, 
       fotoBase64: null,
       qrResult: 'Tanpa QR',
       deviceInfo: navigator.userAgent,
@@ -83,19 +94,19 @@
     };
 
     let isModelsLoaded = false;
-    let watchId = null; // Tambahkan variabel untuk memantau ID GPS
     const video = document.getElementById('videoElement');
     const btnAction = document.getElementById('btn-action');
 
-    //    // Init Logic based on Action
     document.addEventListener("DOMContentLoaded", async () => {
       if(!USER_ID || !API_URL) {
-        alert("Akses ilegal. Harap buka melalui dashboard utama.");
+        alert("Akses ditolak! Harap buka halaman ini melalui Portal Utama Absensi.");
         window.close();
         return;
       }
 
-      document.getElementById('action-title').innerText = ACTION === 'register' ? `Registrasi Wajah: ${NAMA}` : `Absensi ${payload.tipe}: ${NAMA}`;
+      const readableAction = ACTION === 'register' ? 'Registrasi Wajah Baru' : `Presensi Kehadiran ${payload.tipe}`;
+      document.getElementById('action-title').innerText = `${readableAction} : ${NAMA}`;
+      
       if (ACTION !== 'register') {
         document.getElementById('qr-section').classList.remove('hidden');
       }
@@ -108,11 +119,8 @@
       }
     });
 
-    //    // 1. Load Face API Models
+    // 1. Load Face API Models
     async function loadAIModels() {
-      // NOTE: GitHub Pages Anda harus memiliki folder /models 
-      // Download weights dari https://github.com/justadudewhohacks/face-api.js/tree/master/weights
-      // Untuk script ini kita asumsikan URL raw public.
       const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models'; 
       try {
         await Promise.all([
@@ -122,58 +130,51 @@
         ]);
         isModelsLoaded = true;
       } catch (err) {
-        alert("Gagal memuat AI Model. Pastikan koneksi stabil.");
+        alert("Gagal memuat AI Model pengenalan wajah. Periksa koneksi internet Anda.");
       }
     }
 
-    //    // 2. Start Camera
+    // 2. Akses Kamera Depan
     function startCamera() {
       navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false })
         .then(stream => {
           video.srcObject = stream;
-          document.getElementById('st-cam').innerText = "Aktif";
+          document.getElementById('st-cam').innerText = "Sistem Kamera Siap";
           document.getElementById('st-cam').className = "status-ok";
         })
         .catch(err => {
-          document.getElementById('st-cam').innerText = "Ditolak/Error";
-          alert("Mohon izinkan akses kamera!");
+          document.getElementById('st-cam').innerText = "Akses Kamera Ditolak";
+          document.getElementById('st-cam').className = "status-fail";
+          alert("Aplikasi membutuhkan izin kamera untuk memverifikasi wajah Anda.");
         });
     }
 
-    //    // 3. Get GPS (Menggunakan WatchPosition untuk akurasi lebih baik)
+    // 3. Akses GPS Presisi Tinggi
     function getGPSLocation() {
       if (navigator.geolocation) {
-        document.getElementById('st-gps').innerText = "Mencari satelit GPS...";
-        
-        watchId = navigator.geolocation.watchPosition(
+        navigator.geolocation.getCurrentPosition(
           (position) => {
-            const acc = position.coords.accuracy;
             payload.lat = position.coords.latitude;
             payload.lng = position.coords.longitude;
-            payload.accuracy = acc;
+            payload.accuracy = position.coords.accuracy;
             
-            // JIKA AKURASI SANGAT BURUK (> 150 meter error), MINTA KARYAWAN PINDAH
-            if (acc > 150) {
-               document.getElementById('st-gps').innerText = `Sinyal Lemah (${Math.round(acc)}m). Pergi ke area terbuka!`;
-               document.getElementById('st-gps').className = "status-wait text-red-600";
-            } else {
-               document.getElementById('st-gps').innerText = `OK (Akurasi: ${Math.round(acc)}m)`;
-               document.getElementById('st-gps').className = "status-ok";
-            }
+            document.getElementById('st-gps').innerText = `Terkunci (Akurasi: ±${Math.round(payload.accuracy)}m)`;
+            document.getElementById('st-gps').className = "status-ok";
             checkReadyState();
           },
           (error) => {
-            document.getElementById('st-gps').innerText = "Gagal Akses";
-            alert("Mohon izinkan akses lokasi (GPS) dan pastikan fitur Lokasi/GPS di HP Anda MENYALA.");
+            document.getElementById('st-gps').innerText = "GPS Gagal";
+            document.getElementById('st-gps').className = "status-fail";
+            alert("Gagal mengunci lokasi. Pastikan izin lokasi/GPS aktif pada browser Anda.");
           },
-          { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
+          { enableHighAccuracy: true, maximumAge: 0 }
         );
       } else {
-        alert("Browser Anda tidak mendukung Geolocation.");
+        alert("Browser Anda tidak mendukung layanan lokasi.");
       }
     }
 
-    //    // 4. Face Recognition Loop Event
+    // 4. Deteksi dan Pencocokan Wajah secara Realtime (Client-Side Verification)
     video.addEventListener('play', () => {
       const canvas = faceapi.createCanvasFromMedia(video);
       document.getElementById('video-container').append(canvas);
@@ -192,7 +193,7 @@
           const resizedDetections = faceapi.resizeResults(detections, displaySize);
           faceapi.draw.drawDetections(canvas, resizedDetections);
           
-          payload.descriptor = Array.from(detections.descriptor); // Float32Array to standard array for JSON
+          payload.descriptor = Array.from(detections.descriptor);
           
           // Tangkap gambar base64
           const picCanvas = document.createElement('canvas');
@@ -201,30 +202,51 @@
           picCanvas.getContext('2d').drawImage(video, 0, 0);
           payload.fotoBase64 = picCanvas.toDataURL('image/jpeg');
 
-          document.getElementById('st-face').innerText = "Wajah Terdeteksi";
-          document.getElementById('st-face').className = "status-ok";
-          
-          checkReadyState();
+          let isFaceValid = false;
+
+          if (ACTION !== 'register' && registeredDescriptor) {
+             // Komparasi kecocokan ciri wajah (Euclidean Distance)
+             const distance = faceapi.euclideanDistance(detections.descriptor, registeredDescriptor);
+             
+             // Semakin kecil angkanya, semakin identik wajahnya (Threshold aman = 0.55)
+             if (distance <= 0.55) { 
+                document.getElementById('st-face').innerText = "Wajah Terverifikasi Sesuai!";
+                document.getElementById('st-face').className = "status-ok";
+                isFaceValid = true;
+             } else {
+                document.getElementById('st-face').innerText = "Wajah Tidak Cocok!";
+                document.getElementById('st-face').className = "status-fail animate-pulse";
+                isFaceValid = false;
+             }
+          } else {
+             // Jika registrasi baru, deteksi wajah saja sudah cukup
+             document.getElementById('st-face').innerText = "Wajah Terdeteksi";
+             document.getElementById('st-face').className = "status-ok";
+             isFaceValid = true;
+          }
+
+          if (isFaceValid) {
+             checkReadyState();
+          } else {
+             disableButton("Wajah Tidak Sesuai Data");
+          }
         } else {
-          document.getElementById('st-face').innerText = "Tidak Ada Wajah";
+          document.getElementById('st-face').innerText = "Mencari Wajah...";
           document.getElementById('st-face').className = "status-wait";
-          disableButton();
+          disableButton("Mencari Wajah...");
         }
       }, 1000);
     });
 
-    //    // 5. Check if all criteria met to enable send button
+    // 5. Periksa Kesiapan Data Sebelum Mengizinkan Tombol Kirim
     function checkReadyState() {
       if(ACTION === 'register') {
         if(payload.descriptor) {
           enableButton("Simpan Data Wajah");
         }
       } else {
-        // Tombol absen hanya aktif jika koordinat sudah ada DAN akurasi cukup baik (< 150m)
-        if(payload.descriptor && payload.lat && payload.accuracy <= 150) {
+        if(payload.descriptor && payload.lat) {
           enableButton("Kirim Data Absensi");
-        } else if (payload.lat && payload.accuracy > 150) {
-          disableButton("Menunggu Akurasi GPS...");
         }
       }
     }
@@ -232,45 +254,41 @@
     function enableButton(text) {
       btnAction.innerText = text;
       btnAction.disabled = false;
-      btnAction.classList.remove('opacity-50', 'cursor-not-allowed');
-      btnAction.classList.add('animate-pulse');
-      btnAction.onclick = submitData; // Pastikan event trigger saat diklik aktif
+      btnAction.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-gray-400');
+      btnAction.classList.add('bg-blue-600', 'hover:bg-blue-700', 'animate-pulse');
+      btnAction.onclick = submitData;
     }
 
     function disableButton(customText) {
-      btnAction.innerText = customText || "Syarat Belum Terpenuhi...";
+      btnAction.innerText = customText;
       btnAction.disabled = true;
-      btnAction.classList.add('opacity-50', 'cursor-not-allowed');
-      btnAction.classList.remove('animate-pulse');
-      btnAction.onclick = null;
+      btnAction.classList.add('opacity-50', 'cursor-not-allowed', 'bg-gray-400');
+      btnAction.classList.remove('bg-blue-600', 'hover:bg-blue-700', 'animate-pulse');
     }
 
-    //    // 6. Submit via fetch API ke Google Apps Script
+    // 6. Kirim Data Payload ke Google Apps Script Server
     async function submitData() {
-      btnAction.innerText = "Mengirim...";
+      btnAction.innerText = "Mengirim data...";
       btnAction.disabled = true;
       btnAction.classList.remove('animate-pulse');
-      
-      // Stop pemantauan GPS setelah data dikirim untuk menghemat baterai
-      if(watchId) navigator.geolocation.clearWatch(watchId);
 
       try {
         const response = await fetch(API_URL, {
           method: "POST",
-          headers: { "Content-Type": "text/plain;charset=utf-8" }, // GAS prefers text/plain for CORS
+          headers: { "Content-Type": "text/plain;charset=utf-8" }, 
           body: JSON.stringify(payload)
         });
         const result = await response.json();
         
         if(result.status === 'success') {
           alert("BERHASIL: " + result.message);
-          window.close(); // Tutup window jika berhasil
+          window.close(); 
         } else {
           alert("GAGAL: " + result.message);
           enableButton("Coba Lagi");
         }
       } catch(err) {
-        alert("Terjadi kesalahan jaringan.");
+        alert("Terjadi kesalahan koneksi saat mengirim data.");
         enableButton("Coba Lagi");
       }
     }
