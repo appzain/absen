@@ -318,12 +318,42 @@
           }, 1000);
         });
 
+        let isAutoSubmitting = false;
+
         function checkReadyState() {
           if(ACTION === 'register') {
             if(payload.descriptor) enableButton("Simpan Data Wajah");
           } else {
-            // Tombol Kirim TIDAK AKAN NYALA jika koordinat belum tervalidasi
-            if(payload.descriptor && payload.lat) enableButton("Kirim Data Absensi");
+            // Evaluasi Syarat Auto-Submit
+            let isWajahOk = (payload.descriptor && document.getElementById('st-face').className === "status-ok");
+            let isGpsOk = (payload.lat !== null);
+            let isQrOk = (payload.qrResult && payload.qrResult !== 'Tanpa QR'); // Jika QR diimplementasikan nanti
+            
+            let siapDikirim = false;
+            if (isGpsOk && isWajahOk) siapDikirim = true;
+            if (isGpsOk && isQrOk) siapDikirim = true;
+
+            if(siapDikirim) {
+               if (!isAutoSubmitting) {
+                  isAutoSubmitting = true;
+                  let countdown = 1;
+                  
+                  btnAction.disabled = true;
+                  btnAction.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-gray-400');
+                  btnAction.classList.add('bg-green-600', 'text-white');
+                  btnAction.innerText = `MENGIRIM OTOMATIS...`;
+
+                  let countdownInterval = setInterval(() => {
+                      countdown--;
+                      if (countdown <= 0) {
+                          clearInterval(countdownInterval);
+                          submitData();
+                      }
+                  }, 1000);
+               }
+            } else if (payload.descriptor && payload.lat) {
+               enableButton("Kirim Data Absensi");
+            }
           }
         }
 
