@@ -56,6 +56,9 @@
     <button id="btn-action" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 px-4 rounded-xl mt-6 opacity-50 cursor-not-allowed shadow-lg transition" disabled>
       Menyiapkan Sensor...
     </button>
+    
+    <!-- Papan Pesan Server (Auto Retry UI) -->
+    <div id="server-msg" class="hidden"></div>
   </div>
 
   <script>
@@ -74,9 +77,8 @@
       const urlParams = new URLSearchParams(window.location.search);
       const ACTION = urlParams.get('action'); 
       const USER_ID = urlParams.get('userId');
-      const NAMA = urlParams.get('nama');
+      const NAMA = urlParams.get('nama') || "";
       const API_URL = urlParams.get('api');
-      const REG_DESCRIPTOR_STR = urlParams.get('descriptor'); 
 
       if(!USER_ID || !API_URL) {
         alert("Akses ditolak! Harap buka halaman ini melalui Portal Utama Absensi.");
@@ -128,6 +130,9 @@
 
         let isModelsLoaded = false;
         let isCameraReady = false;
+        let isAutoSubmitting = false;
+        let isOnCooldown = false;
+
         const video = document.getElementById('videoElement');
         const btnAction = document.getElementById('btn-action');
 
@@ -178,7 +183,6 @@
             });
         }
 
-        // --- PERBAIKAN: JARING PENGAMAN LOKASI PALSU & PENINGKATAN TIMEOUT ---
         function getGPSLocation() {
           if (navigator.geolocation) {
             document.getElementById('st-gps').innerText = "Mencari Sinyal (Bisa butuh 20 dtk)...";
@@ -205,7 +209,6 @@
             };
             
             const handleError = (error) => {
-                // Jangan tampilkan error timeout terus-menerus jika masih tahap watchPosition
                 if (error.code === error.TIMEOUT) return; 
                 
                 if (locationWatchId) navigator.geolocation.clearWatch(locationWatchId);
@@ -224,14 +227,12 @@
                 document.getElementById('st-gps').className = "status-fail";
             };
 
-            // Gunakan watchPosition agar GPS terus mencari sinyal satelit yang lebih akurat
             locationWatchId = navigator.geolocation.watchPosition(
               handleSuccess,
               handleError,
               { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
             );
 
-            // Batas maksimal waktu pencarian (35 detik)
             timeoutId = setTimeout(() => {
                 if (!payload.lat) {
                     if (locationWatchId) navigator.geolocation.clearWatch(locationWatchId);
@@ -305,12 +306,12 @@
                 if (isFaceValid) {
                    checkReadyState();
                 } else {
-                   disableButton("Wajah Tidak Sesuai Data");
+                   if(ACTION === 'register') disableButton("Wajah Tidak Sesuai Data");
                 }
               } else {
                 document.getElementById('st-face').innerText = "Mencari Wajah...";
                 document.getElementById('st-face').className = "status-wait";
-                disableButton("Mencari Wajah...");
+                if(ACTION === 'register') disableButton("Mencari Wajah...");
               }
             } catch(errorLoop) {
               console.error(errorLoop);
@@ -318,41 +319,26 @@
           }, 1000);
         });
 
-        let isAutoSubmitting = false;
-
+        // --- SISTEM VALIDASI & AUTO SUBMITCERDAS ---
         function checkReadyState() {
           if(ACTION === 'register') {
-            if(payload.descriptor) enableButton("Simpan Data Wajah");
+            // Register diizinkan Submit Manual kapan saja ketika ada descriptor
+            if(payload.descriptor && !isAutoSubmitting && !isOnCooldown) enableButton("Simpan Data Wajah");
           } else {
-            // Evaluasi Syarat Auto-Submit
+            // Absen WAJIB Auto-submit dengan syarat Gps Ok & Wajah Ok
             let isWajahOk = (payload.descriptor && document.getElementById('st-face').className === "status-ok");
             let isGpsOk = (payload.lat !== null);
-            let isQrOk = (payload.qrResult && payload.qrResult !== 'Tanpa QR'); // Jika QR diimplementasikan nanti
             
-            let siapDikirim = false;
-            if (isGpsOk && isWajahOk) siapDikirim = true;
-            if (isGpsOk && isQrOk) siapDikirim = true;
-
-            if(siapDikirim) {
-               if (!isAutoSubmitting) {
-                  isAutoSubmitting = true;
-                  let countdown = 1;
-                  
-                  btnAction.disabled = true;
-                  btnAction.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-gray-400');
-                  btnAction.classList.add('bg-green-600', 'text-white');
-                  btnAction.innerText = `MENGIRIM OTOMATIS...`;
-
-                  let countdownInterval = setInterval(() => {
-                      countdown--;
-                      if (countdown <= 0) {
-                          clearInterval(countdownInterval);
-                          submitData();
-                      }
-                  }, 1000);
-               }
-            } else if (payload.descriptor && payload.lat) {
-               enableButton("Kirim Data Absensi");
+            if (isGpsOk && isWajahOk && !isOnCooldown && !isAutoSubmitting) {
+                isAutoSubmitting = true;
+                btnAction.disabled = true;
+                btnAction.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-gray-400');
+                btnAction.classList.add('bg-green-600', 'text-white');
+                btnAction.innerText = `MENGIRIM OTOMATIS...`;
+                
+                setTimeout(() => {
+                    submitData();
+                }, 800);
             }
           }
         }
@@ -371,20 +357,93 @@
         }
 
         async function submitData() {
-          btnAction.innerText = "Mengirim data..."; btnAction.disabled = true; btnAction.classList.remove('animate-pulse');
+          btnAction.innerText = "Memvalidasi Lokasi & Data..."; 
+          btnAction.disabled = true; 
+          btnAction.classList.remove('animate-pulse');
+          
+          const msgDiv = document.getElementById('server-msg');
+          msgDiv.classList.add('hidden');
+
           try {
             const response = await fetch(API_URL, {
               method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, 
               body: JSON.stringify(payload)
             });
             const result = await response.json();
+            
+            msgDiv.classList.remove('hidden');
+
             if(result.status === 'success') {
-              alert("BERHASIL: " + result.message); window.close(); 
+              // Jika SUKSES
+              msgDiv.innerHTML = "✅ <b>BERHASIL:</b> " + result.message;
+              msgDiv.className = "text-sm font-bold text-center mt-3 text-green-700 block bg-green-50 p-3 rounded-lg border border-green-200";
+              btnAction.innerText = "Sukses! Menutup layar...";
+              btnAction.className = "w-full bg-green-600 text-white font-black py-4 px-4 rounded-xl mt-4 shadow-lg transition";
+              
+              setTimeout(() => {
+                 window.close();
+              }, 2500);
+
             } else {
-              alert("GAGAL: " + result.message); enableButton("Coba Lagi");
+              // Jika GAGAL (termasuk Di Luar Radius / Wajah Tidak Cocok)
+              let userFriendlyError = result.message;
+              let isRadiusError = result.message.toLowerCase().includes('jarak') || result.message.toLowerCase().includes('radius') || result.message.toLowerCase().includes('titik kantor');
+              
+              if (isRadiusError) {
+                 document.getElementById('st-gps').innerText = "Di Luar Area Kantor!";
+                 document.getElementById('st-gps').className = "status-fail animate-pulse";
+                 userFriendlyError = "Anda berada di luar area yang diizinkan.";
+              }
+
+              msgDiv.innerHTML = "❌ <b>GAGAL:</b> " + userFriendlyError;
+              msgDiv.className = "text-xs font-bold text-center mt-3 text-red-600 block bg-red-50 p-3 rounded-lg border border-red-200";
+              
+              if (ACTION === 'register') {
+                  isOnCooldown = false;
+                  isAutoSubmitting = false;
+                  enableButton("Coba Lagi Simpan");
+              } else {
+                  // Jalankan Cooldown & Loop Pengecekan Terus Menerus
+                  isOnCooldown = true;
+                  isAutoSubmitting = false; 
+                  
+                  let cd = 4;
+                  btnAction.innerText = `Menunggu (${cd}s)...`;
+                  btnAction.className = "w-full bg-gray-500 text-white font-black py-4 px-4 rounded-xl mt-4 shadow-lg transition opacity-80 cursor-not-allowed";
+                  
+                  let cdInterval = setInterval(() => {
+                      cd--;
+                      if(cd > 0) {
+                         btnAction.innerText = `Mencoba lagi dalam (${cd}s)...`;
+                      } else {
+                         clearInterval(cdInterval);
+                         isOnCooldown = false;
+                         msgDiv.classList.add('hidden'); // Sembunyikan pesan error lama
+                         btnAction.innerText = "Menyiapkan Sensor...";
+                         checkReadyState(); // Cek lagi apakah kondisi sudah terpenuhi untuk mengirim otomatis
+                      }
+                  }, 1000);
+              }
             }
           } catch(err) {
-            alert("Terjadi kesalahan koneksi saat mengirim data."); enableButton("Coba Lagi");
+            msgDiv.classList.remove('hidden');
+            msgDiv.innerHTML = "❌ <b>KONEKSI GAGAL:</b> Pastikan internet Anda stabil.";
+            msgDiv.className = "text-sm font-bold text-center mt-3 text-red-600 block bg-red-50 p-3 rounded-lg border border-red-200";
+            
+            if(ACTION === 'register') {
+                isOnCooldown = false;
+                isAutoSubmitting = false;
+                enableButton("Coba Lagi Simpan");
+            } else {
+                isOnCooldown = true;
+                isAutoSubmitting = false;
+                btnAction.innerText = "Terputus. Mengulang otomatis...";
+                setTimeout(() => { 
+                    isOnCooldown = false; 
+                    msgDiv.classList.add('hidden');
+                    checkReadyState(); 
+                }, 4000);
+            }
           }
         }
       }
