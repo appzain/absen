@@ -319,26 +319,30 @@
           }, 1000);
         });
 
-        // --- SISTEM VALIDASI & AUTO SUBMITCERDAS ---
+        // --- SISTEM VALIDASI & AUTO SUBMIT CERDAS ---
         function checkReadyState() {
           if(ACTION === 'register') {
             // Register diizinkan Submit Manual kapan saja ketika ada descriptor
             if(payload.descriptor && !isAutoSubmitting && !isOnCooldown) enableButton("Simpan Data Wajah");
           } else {
-            // Absen WAJIB Auto-submit dengan syarat Gps Ok & Wajah Ok
+            // Absen WAJIB Auto-submit dengan syarat Gps Ok & Wajah Ok ATAU Gps Ok & Qr Ok
             let isWajahOk = (payload.descriptor && document.getElementById('st-face').className === "status-ok");
             let isGpsOk = (payload.lat !== null);
+            let isQrOk = (payload.qrResult && payload.qrResult !== 'Tanpa QR'); // Untuk masa depan jika QR digabung
             
-            if (isGpsOk && isWajahOk && !isOnCooldown && !isAutoSubmitting) {
+            let siapDikirim = false;
+            if (isGpsOk && isWajahOk) siapDikirim = true;
+            if (isGpsOk && isQrOk) siapDikirim = true;
+
+            if (siapDikirim && !isOnCooldown && !isAutoSubmitting) {
                 isAutoSubmitting = true;
                 btnAction.disabled = true;
                 btnAction.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-gray-400');
                 btnAction.classList.add('bg-green-600', 'text-white');
                 btnAction.innerText = `MENGIRIM OTOMATIS...`;
                 
-                setTimeout(() => {
-                    submitData();
-                }, 800);
+                // MENGHILANGKAN JEDA SETTIMEOUT - MENGIRIM SAAT ITU JUGA
+                submitData();
             }
           }
         }
@@ -377,12 +381,13 @@
               // Jika SUKSES
               msgDiv.innerHTML = "✅ <b>BERHASIL:</b> " + result.message;
               msgDiv.className = "text-sm font-bold text-center mt-3 text-green-700 block bg-green-50 p-3 rounded-lg border border-green-200";
-              btnAction.innerText = "Sukses! Menutup layar...";
+              btnAction.innerText = "Sukses! Menutup layar otomatis...";
               btnAction.className = "w-full bg-green-600 text-white font-black py-4 px-4 rounded-xl mt-4 shadow-lg transition";
               
+              // WAKTU AUTO-CLOSE DIPERCEPAT MENJADI 0.5 DETIK
               setTimeout(() => {
                  window.close();
-              }, 2500);
+              }, 500);
 
             } else {
               // Jika GAGAL (termasuk Di Luar Radius / Wajah Tidak Cocok)
