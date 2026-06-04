@@ -61,6 +61,20 @@
     <div id="server-msg" class="hidden"></div>
   </div>
 
+  <!-- Permission Overlay -->
+  <div id="permission-overlay" class="fixed inset-0 bg-gray-900 bg-opacity-80 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl p-6 text-center max-w-sm w-full shadow-2xl">
+      <div class="mb-4 text-blue-600">
+         <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4" />
+         </svg>
+      </div>
+      <h2 class="text-xl font-bold text-gray-800 mb-2">Izin Akses Sensor</h2>
+      <p class="text-sm text-gray-600 mb-6 leading-relaxed">Sistem keamanan cerdas membutuhkan akses <b>Kamera (Biometrik)</b> dan <b>Lokasi (GPS)</b>. Harap klik <b class="text-blue-600">"Allow" / "Izinkan"</b> pada pemberitahuan browser (pop-up) yang muncul setelah ini.</p>
+      <button onclick="requestPermissions()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition transform hover:-translate-y-0.5">Saya Mengerti, Izinkan Akses</button>
+    </div>
+  </div>
+
   <script>
     // --- GLOBAL ERROR CATCHER ---
     window.onerror = function(msg, url, lineNo, columnNo, error) {
@@ -136,12 +150,16 @@
         const video = document.getElementById('videoElement');
         const btnAction = document.getElementById('btn-action');
 
-        startCamera();
-        if(ACTION !== 'register') {
-           getGPSLocation();
-        }
-
-        loadAIModels();
+        let matchConsecutiveSeconds = 0; // Tambahan untuk delay 2 detik
+        
+        window.requestPermissions = function() {
+           document.getElementById('permission-overlay').classList.add('hidden');
+           startCamera();
+           if(ACTION !== 'register') {
+              getGPSLocation();
+           }
+           loadAIModels();
+        };
 
         async function loadAIModels() {
           const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models'; 
@@ -279,15 +297,24 @@
                    if (registeredDescriptor) {
                        const distance = faceapi.euclideanDistance(detections.descriptor, registeredDescriptor);
                        if (distance <= 0.55) { 
-                          document.getElementById('st-face').innerText = "Wajah Terverifikasi Sesuai!";
-                          document.getElementById('st-face').className = "status-ok";
-                          isFaceValid = true;
+                          matchConsecutiveSeconds++;
+                          if (matchConsecutiveSeconds >= 2) {
+                             document.getElementById('st-face').innerText = "Wajah Terverifikasi Sesuai!";
+                             document.getElementById('st-face').className = "status-ok";
+                             isFaceValid = true;
+                          } else {
+                             document.getElementById('st-face').innerText = `Wajah Cocok! Tahan posisi...`;
+                             document.getElementById('st-face').className = "status-wait animate-pulse";
+                             isFaceValid = false;
+                          }
                        } else {
+                          matchConsecutiveSeconds = 0;
                           document.getElementById('st-face').innerText = "Wajah Tidak Cocok!";
                           document.getElementById('st-face').className = "status-fail animate-pulse";
                           isFaceValid = false;
                        }
                    } else {
+                       matchConsecutiveSeconds = 0;
                        if (!descriptorFetchDone) {
                            document.getElementById('st-face').innerText = "Mengunduh Data Wajah...";
                            document.getElementById('st-face').className = "status-wait animate-pulse";
@@ -298,9 +325,16 @@
                        isFaceValid = false;
                    }
                 } else {
-                   document.getElementById('st-face').innerText = "Wajah Terdeteksi";
-                   document.getElementById('st-face').className = "status-ok";
-                   isFaceValid = true;
+                   matchConsecutiveSeconds++;
+                   if (matchConsecutiveSeconds >= 2) {
+                       document.getElementById('st-face').innerText = "Wajah Terdeteksi Stabil";
+                       document.getElementById('st-face').className = "status-ok";
+                       isFaceValid = true;
+                   } else {
+                       document.getElementById('st-face').innerText = `Wajah Terdeteksi! Tahan posisi...`;
+                       document.getElementById('st-face').className = "status-wait animate-pulse";
+                       isFaceValid = false;
+                   }
                 }
 
                 if (isFaceValid) {
@@ -309,6 +343,7 @@
                    if(ACTION === 'register') disableButton("Wajah Tidak Sesuai Data");
                 }
               } else {
+                matchConsecutiveSeconds = 0;
                 document.getElementById('st-face').innerText = "Mencari Wajah...";
                 document.getElementById('st-face').className = "status-wait";
                 if(ACTION === 'register') disableButton("Mencari Wajah...");
